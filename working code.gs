@@ -1,3 +1,4 @@
+
 function syncHDFC_Monthly_Split() {
   // --- CONFIGURATION ---
   var searchQuery = 'from:alerts@hdfcbank.net "debited from" newer_than:5d';
@@ -24,97 +25,99 @@ function syncHDFC_Monthly_Split() {
           continue; 
       }
 
-      // 2. DETERMINE IF UPI
-      var isUPI = (body.indexOf("Your UPI transaction reference number is") > -1);
-
-      // 3. EXTRACT CORE DATA
-      var amountMatch = body.match(/Rs\.?(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?)/);
+      // 2. EXTRACT AMOUNT (Fixed Regex)
+      // Old Regex failed on 1009.80. New Regex grabs all digits/commas/dots after Rs.
+      var amountMatch = body.match(/Rs\.?\s*([0-9,]+(?:\.[0-9]+)?)/);
       var amount = amountMatch ? amountMatch[1].replace(/,/g, '') : "0.00"; 
 
-      // Date Parsing
-      var dateMatch_standard = body.match(/on\s+(\d{1,2}\s+\w{3},\s+\d{4})/);
-      var dateMatch_upi = body.match(/on\s+(\d{2}-\d{2}-\d{2})/);
-      var dateString = dateMatch_standard ? dateMatch_standard[1] : (dateMatch_upi ? dateMatch_upi[1] : "");
+      // 3. EXTRACT DATE & TIME
+      var dateString = "";
+      var timeString = ""; 
+      var txnDate = new Date(); 
 
-      var txnDate = parseDateString(dateString); 
+      // CHECK: Is it the "Standard/Credit Card" format? (Has "at HH:mm:ss")
+      var dateTimeMatch = body.match(/on\s+(\d{1,2}\s+\w{3},\s+\d{4})\s+at\s+(\d{2}:\d{2}:\d{2})/);
+      
+      if (dateTimeMatch) {
+          dateString = dateTimeMatch[1]; 
+          var rawTime = dateTimeMatch[2]; 
+          timeString = rawTime.replace(/:/g, ""); 
+          txnDate = new Date(dateString + " " + rawTime);
+      } else {
+          // Fallback: Try UPI format (on 23-11-25)
+          var dateMatch_upi = body.match(/on\s+(\d{2}-\d{2}-\d{2})/);
+          if (dateMatch_upi) {
+              dateString = dateMatch_upi[1];
+              var parts = dateString.split("-");
+              txnDate = new Date("20" + parts[2], parts[1] - 1, parts[0]);
+              timeString = "000000"; 
+          } else {
+              continue; 
+          }
+      }
+
       if (txnDate < cutoffDate) {
         continue;
       }
-      
+
+      // 4. GENERATE ID (Ref No) & PARSE MERCHANT
       var refNo = "";
       var cleanMerchant = "Unknown";
-      var fullDescription = ""; 
+      var fullDescription = "";
 
-      if (isUPI) {
-          // --- UPI LOGIC ---
-          var refMatch = body.match(/reference number is\s+(\d+)/);
-          refNo = refMatch ? refMatch[1] : "";
+      // Check for explicit Reference Number (Bank Account / UPI)
+      var refMatch = body.match(/reference number is\s+(\d+)/);
+
+      if (refMatch) {
+          // --- CASE A: HAS REFERENCE NUMBER ---
+          refNo = refMatch[1]; 
           
           var merchantMatch = body.match(/to\s+(?:VPA\s+)?(.*?)\s+on/);
           fullDescription = merchantMatch ? merchantMatch[1].trim() : "Unknown";
           
+          // Clean Name
           cleanMerchant = fullDescription.split(" ").filter(function(word) {
             return !word.includes("@") && !word.includes("."); 
           }).join(" ");
 
       } else {
-          // --- STANDARD ALERT LOGIC (Fixed Regex) ---
-          
-          // Generate a stable ID for deduplication
-          // We use Date + Source + Amount. This prevents "6 times" duplication.
-          var uniqueDateCode = Utilities.formatDate(txnDate, Session.getScriptTimeZone(), "yyyyMMdd");
-          refNo = "NO_REF_" + uniqueDateCode + "_" + source.replace(" ", "") + "_" + amount;
-          
-          // Improved Regex: Matches "towards X on", "at X on", or "to X on"
+          // --- CASE B: NO REFERENCE NUMBER ---
+          // Generate ID using Date + Time + Amount
+          var dateCode = Utilities.formatDate(txnDate, Session.getScriptTimeZone(), "yyyyMMdd");
+          refNo = "NO_REF_" + dateCode + "_" + timeString + "_" + amount;
+
           var merchantMatch = body.match(/(?:towards|at|to)\s+(.*?)\s+on/i);
           fullDescription = merchantMatch ? merchantMatch[1].trim() : "Unknown";
-          cleanMerchant = fullDescription; 
+          cleanMerchant = fullDescription;
       }
 
-      // --- WRITING DATA ---
+      // --- WRITING TO SHEET ---
       var sheetName = Utilities.formatDate(txnDate, Session.getScriptTimeZone(), "MMM yyyy");
       var sheet = getOrCreateSheet(spreadsheet, sheetName);
 
-      // Check Duplicates (Now strips apostrophes for accurate checking)
       if (isDuplicate(sheet, refNo)) {
         continue;
       }
       
-      // Add apostrophe for display, but isDuplicate handles this now
-      var formattedRefNo = (refNo.indexOf("NO_REF") === -1) ? "'" + refNo : refNo;
+      var formattedRefNo = "'" + refNo;
 
-      // COLUMNS: Date | Source | Merchant | Amount | Reference No | Full Description
       var dataRow = [dateString, source, cleanMerchant, amount, formattedRefNo, fullDescription];
       sheet.appendRow(dataRow);
-      Logger.log("Added: " + cleanMerchant);
+      Logger.log("Added: " + cleanMerchant + " | Ref: " + refNo + " | Amt: " + amount);
     }
   }
 }
 
 // --- HELPER FUNCTIONS ---
 
-function parseDateString(dateStr) {
-    if (!dateStr) return new Date(0);
-    if (dateStr.match(/^\d{2}-\d{2}-\d{2}$/)) {
-        var parts = dateStr.split("-");
-        return new Date("20" + parts[2], parts[1] - 1, parts[0]);
-    }
-    if (dateStr.match(/^\d{1,2}\s+\w{3},\s+\d{4}$/)) {
-        return new Date(dateStr);
-    }
-    return new Date(0); 
-}
-
 function getOrCreateSheet(ss, sheetName) {
   var sheet = ss.getSheetByName(sheetName);
   if (!sheet) {
     sheet = ss.insertSheet(sheetName);
-    // FORCE HEADERS on creation
     var headers = [["Date", "Source", "Merchant", "Amount", "Reference No", "Full Description"]]; 
     sheet.getRange("A1:F1").setValues(headers).setFontWeight("bold");
     sheet.setFrozenRows(1);
   }
-  // SAFETY CHECK: If sheet exists but is empty/missing headers, add them
   else if (sheet.getLastRow() === 0 || sheet.getRange("A1").getValue() !== "Date") {
     var headers = [["Date", "Source", "Merchant", "Amount", "Reference No", "Full Description"]]; 
     sheet.getRange("A1:F1").setValues(headers).setFontWeight("bold");
@@ -125,14 +128,9 @@ function getOrCreateSheet(ss, sheetName) {
 function isDuplicate(sheet, refNo) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return false; 
-  
-  // Get existing refs from Column E
   var data = sheet.getRange(2, 5, lastRow - 1, 1).getValues(); 
-  
-  // CLEAN CHECK: Remove apostrophe before comparing
   var existingRefs = data.map(function(r) { 
     return r[0].toString().replace(/^'/, ''); 
   });
-  
   return existingRefs.indexOf(refNo) > -1;
 }
