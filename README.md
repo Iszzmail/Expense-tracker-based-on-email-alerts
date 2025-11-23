@@ -1,24 +1,18 @@
 # Expense Tracker: Gmail to Google Sheets
 
-This project uses Google Apps Script to automatically scan your Gmail for RuPay card transactions and save them to a Google Sheet.
+This project uses Google Apps Script to automatically scan your Gmail for HDFC transactions (RuPay Credit Card & Bank Account) and save them to a Google Sheet.
 
 ## Features
-- **Automatic Sync**: Runs automatically every 2 hours (or your preferred interval).
-- **Duplicate Prevention**: Uses a Gmail label (`ExpenseTrackerProcessed`) to ensure emails aren't counted twice.
-- **Customizable**: You can adjust the parsing logic to match your specific bank's email format.
+- **Centralized Tracking**: Writes all transactions to a single sheet named **"Expense tracker"**.
+- **Multi-Account**: Tracks "RuPay CC XX7652" and "Account 7616" in a dedicated column.
+- **Duplicate Prevention**: Uses the **UPI Transaction Reference Number** to ensure no duplicates.
+- **Start Date**: Configured to start tracking from **Nov 20, 2025**.
 
 ## Setup Instructions
 
 ### 1. Prepare the Google Sheet
 1. Create a new [Google Sheet](https://sheets.new).
-2. Rename the tab at the bottom to `Sheet1` (if it isn't already).
-3. Add the following headers to the first row (A1:F1):
-   - `Date`
-   - `Merchant`
-   - `Amount`
-   - `Debit/Credit`
-   - `Description`
-   - `Message ID`
+2. The script will automatically create a tab named **"Expense tracker"** if it doesn't exist.
 
 ### 2. Add the Script
 1. In your Google Sheet, go to **Extensions** > **Apps Script**.
@@ -26,12 +20,8 @@ This project uses Google Apps Script to automatically scan your Gmail for RuPay 
 3. Save the project (Cmd/Ctrl + S).
 
 ### 3. Test the Script
-1. In the Apps Script toolbar, select the `setupLabel` function and click **Run**.
-   - You will need to authorize the script to access your Gmail and Sheets.
-2. Send yourself a test email with the subject "RuPay" and body "Rs. 100.00 spent at TestMerchant".
-3. Select the `processEmails` function and click **Run**.
-4. Check your Google Sheet. You should see the transaction!
-5. Check your Gmail. The email should now have the label `ExpenseTrackerProcessed`.
+1. Select the `processEmails` function and click **Run**.
+2. Check your Google Sheet. You should see a tab named "Expense tracker" with your transactions!
 
 ### 4. Automate (Triggers)
 1. In the Apps Script sidebar, click on **Triggers** (alarm clock icon).
@@ -42,6 +32,3 @@ This project uses Google Apps Script to automatically scan your Gmail for RuPay 
    - Type of time based trigger: `Hour timer`
    - Interval: `Every 2 hours`
 4. Click **Save**.
-
-## Customization
-If your bank emails look different, you may need to edit the `parseTransaction` function in `Code.gs`. Look for the `Regex examples` section and adjust the patterns to match your email body.
