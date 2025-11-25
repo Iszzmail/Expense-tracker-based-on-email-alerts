@@ -4,7 +4,9 @@ This project uses Google Apps Script to automatically scan your Gmail for HDFC t
 
 ## Features
 - **Centralized Tracking**: Writes all transactions to a single sheet named **"Expense tracker"**.
-- **Multi-Account**: Tracks "RuPay CC XX7652" and "Account 7616" in a dedicated column.
+- **Multi-Account**: Tracks banks spending alerts emails and looks for keywords on the alert email For example, in the default script I used the
+- "RuPay CC XX7652"
+- "Account 7616"
 - **Duplicate Prevention**: Uses the **UPI Transaction Reference Number** to ensure no duplicates.
 - **Start Date**: Configured to start tracking from **Nov 20, 2025**.
 
